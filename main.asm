@@ -34,22 +34,6 @@ myval:    .byte 1
 .cseg
 .org          0x0000
 
-;   avrdude -c usbasp -p t13 -U flash:w:main.hex
-;   avrdude -c usbasp -p t13 -U lfuse:w:<0xHH>:m
-;   avrdude -c usbasp -p t13 -U hfuse:w:<0xHH>:m
-;   avrdude -c usbasp -p t13 -U efuse:w:<0xHH>:m
-
-;    rjmp        reset
-;    rjmp        ext_int0
-;    rjmp        pc_int0
-;    rjmp        tim0_ovf
-;    rjmp        ee_rdy
-;    rjmp        ana_comp
-;    rjmp        tim0_compa
-;    rjmp        tim0_compb
-;    rjmp        watchdog
-;    rjmp        adc_complete
-
 
 reset:
     ldi     r16,low(RAMEND)
@@ -77,7 +61,7 @@ reset:
     ldi     r16,0b00000101
     out     TCCR0B,r16
     ; overflow every 250 cycles = 0.5 seconds
-    ldi     r16,250
+    ldi     r16,56
     out     OCR0A,r16
     ; enable Compare A interrupt
     ;ldi     r16,1<<OCIE0A
