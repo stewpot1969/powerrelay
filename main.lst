@@ -1,9 +1,9 @@
 
-AVRA   Ver. 1.3.0 main.asm Tue Aug 16 21:25:39 2016
+AVRA   Ver. 1.3.0 main.asm Wed Aug 17 14:40:16 2016
 
 
          
-         ; file to control a relay
+         ;  file to control a relay
          
           .include "tn13def.inc"
          ;***** THIS IS A MACHINE GENERATED FILE - DO NOT EDIT ********************
@@ -502,7 +502,7 @@ AVRA   Ver. 1.3.0 main.asm Tue Aug 16 21:25:39 2016
           .dseg
           .org  SRAM_START
          
-         ;myval:    .byte 1
+D:000060    myval:    .byte 1
          
           .cseg
           .org          0x0000
@@ -565,7 +565,7 @@ C:000011 bf03          out     TCCR0B,r16
 C:000012 ef0a          ldi     r16,250
 C:000013 bf06          out     OCR0A,r16
              ; enable Compare A interrupt
-             ;ldi     r16,0b00000100
+             ;ldi     r16,1<<OCIE0A
              ;out     TIMSK0,r16
              ; #### Don't enable any interrupts -
              ; poll the interrupt flag instead
@@ -573,11 +573,11 @@ C:000013 bf06          out     OCR0A,r16
           loop:
              ; step 1: wait for the interrupt flag to be set
 C:000014 b708          in    r16,TIFR0
-C:000015 ff02          sbrs  r16,2   ; OCF0A is set
+C:000015 ff02          sbrs  r16,OCF0A
 C:000016 cffd          rjmp  loop
              
              ; step 2: clear interrupt flag
-C:000017 e004          ldi   r16,0b00000100
+C:000017 e004          ldi   r16,1<<OCF0A
 C:000018 bf08          out   TIFR0,r16
              
              ; step 3: invert LED
@@ -609,7 +609,7 @@ C:00001e cfff          rjmp    nowhere
 
 Segment usage:
    Code      :        31 words (62 bytes)
-   Data      :         0 bytes
+   Data      :         1 bytes
    EEPROM    :         0 bytes
 
 Assembly completed with no errors.

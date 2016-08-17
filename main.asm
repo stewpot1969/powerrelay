@@ -29,7 +29,7 @@
 .dseg
 .org  SRAM_START
 
-;myval:    .byte 1
+myval:    .byte 1
 
 .cseg
 .org          0x0000
@@ -80,7 +80,7 @@ reset:
     ldi     r16,250
     out     OCR0A,r16
     ; enable Compare A interrupt
-    ;ldi     r16,0b00000100
+    ;ldi     r16,1<<OCIE0A
     ;out     TIMSK0,r16
     ; #### Don't enable any interrupts -
     ; poll the interrupt flag instead
@@ -88,11 +88,11 @@ reset:
 loop:
     ; step 1: wait for the interrupt flag to be set
     in    r16,TIFR0
-    sbrs  r16,2   ; OCF0A is set
+    sbrs  r16,OCF0A
     rjmp  loop
     
     ; step 2: clear interrupt flag
-    ldi   r16,0b00000100
+    ldi   r16,1<<OCF0A
     out   TIFR0,r16
     
     ; step 3: invert LED
