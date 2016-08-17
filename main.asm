@@ -1,5 +1,5 @@
 
-; file to control a relay
+;  file to control a relay
 
 .include "tn13def.inc"
 
