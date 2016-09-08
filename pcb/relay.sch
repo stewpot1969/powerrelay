@@ -140,7 +140,7 @@ U 1 1 57CD5E94
 P 4900 1600
 F 0 "R4" V 4980 1600 50  0000 C CNN
 F 1 "5K6" V 4900 1600 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM10mm" V 4830 1600 50  0000 C CNN
+F 2 "Resistors_SMD:R_1206_HandSoldering" V 4830 1600 50  0000 C CNN
 F 3 "" H 4900 1600 50  0000 C CNN
 	1    4900 1600
 	1    0    0    -1  
@@ -151,7 +151,7 @@ U 1 1 57CD6015
 P 4800 3500
 F 0 "R5" V 4880 3500 50  0000 C CNN
 F 1 "5K6" V 4800 3500 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM10mm" V 4730 3500 50  0000 C CNN
+F 2 "Resistors_SMD:R_1206_HandSoldering" V 4730 3500 50  0000 C CNN
 F 3 "" H 4800 3500 50  0000 C CNN
 	1    4800 3500
 	-1   0    0    1   
@@ -162,7 +162,7 @@ U 1 1 57CD65B6
 P 4450 1850
 F 0 "R2" V 4530 1850 50  0000 C CNN
 F 1 "1M" V 4450 1850 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM10mm" V 4380 1850 50  0000 C CNN
+F 2 "Resistors_SMD:R_1206_HandSoldering" V 4380 1850 50  0000 C CNN
 F 3 "" H 4450 1850 50  0000 C CNN
 	1    4450 1850
 	1    0    0    -1  
@@ -173,7 +173,7 @@ U 1 1 57CD6643
 P 4450 2250
 F 0 "R3" V 4530 2250 50  0000 C CNN
 F 1 "330K" V 4450 2250 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM10mm" V 4380 2250 50  0000 C CNN
+F 2 "Resistors_SMD:R_1206_HandSoldering" V 4380 2250 50  0000 C CNN
 F 3 "" H 4450 2250 50  0000 C CNN
 	1    4450 2250
 	1    0    0    -1  
@@ -194,8 +194,8 @@ L C C1
 U 1 1 57CD674F
 P 4200 2250
 F 0 "C1" H 4225 2350 50  0000 L CNN
-F 1 "C" H 4225 2150 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D6_P5" H 4238 2100 50  0000 C CNN
+F 1 "22uF" H 4225 2150 50  0000 L CNN
+F 2 "Capacitors_Tantalum_SMD:TantalC_SizeC_EIA-6032_HandSoldering" H 4238 2100 50  0000 C CNN
 F 3 "" H 4200 2250 50  0000 C CNN
 	1    4200 2250
 	1    0    0    -1  
@@ -227,8 +227,8 @@ L C C2
 U 1 1 57CD720D
 P 2250 5200
 F 0 "C2" H 2275 5300 50  0000 L CNN
-F 1 "1uF" H 2275 5100 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L11_P2.5" H 2288 5050 50  0000 C CNN
+F 1 "22uF" H 2275 5100 50  0000 L CNN
+F 2 "Capacitors_Tantalum_SMD:TantalC_SizeC_EIA-6032_HandSoldering" H 2288 5050 50  0000 C CNN
 F 3 "" H 2250 5200 50  0000 C CNN
 	1    2250 5200
 	1    0    0    -1  
@@ -238,8 +238,8 @@ L C C3
 U 1 1 57CD728E
 P 3350 5200
 F 0 "C3" H 3375 5300 50  0000 L CNN
-F 1 "1uF" H 3375 5100 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Radial_D5_L11_P2.5" H 3388 5050 50  0000 C CNN
+F 1 "22uF" H 3375 5100 50  0000 L CNN
+F 2 "Capacitors_Tantalum_SMD:TantalC_SizeC_EIA-6032_HandSoldering" H 3388 5050 50  0000 C CNN
 F 3 "" H 3350 5200 50  0000 C CNN
 	1    3350 5200
 	1    0    0    -1  
@@ -272,7 +272,7 @@ U 1 1 57CD849A
 P 3800 1800
 F 0 "R1" V 3880 1800 50  0000 C CNN
 F 1 "1K" V 3800 1800 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM10mm" V 3730 1800 50  0000 C CNN
+F 2 "Resistors_SMD:R_1206_HandSoldering" V 3730 1800 50  0000 C CNN
 F 3 "" H 3800 1800 50  0000 C CNN
 	1    3800 1800
 	1    0    0    -1  
