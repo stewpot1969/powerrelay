@@ -1,5 +1,5 @@
 
-AVRA   Ver. 1.3.0 main.asm Wed Aug 17 22:58:05 2016
+AVRA   Ver. 1.3.0 main.asm Fri Oct  7 13:04:08 2016
 
 
          
@@ -502,7 +502,7 @@ AVRA   Ver. 1.3.0 main.asm Wed Aug 17 22:58:05 2016
           .dseg
           .org  SRAM_START
          
-D:000060    myval:    .byte 1
+         ; myval:    .byte 1
          
           .cseg
           .org          0x0000
@@ -537,44 +537,122 @@ C:00000b   +      set_pullup  B,0       ; PB0 button pullup
 C:00000b b308      in    r16,PORTB
 C:00000c 6001      ori   r16,1<<0
 C:00000d bb08      out   PORTB,r16
+         
+             ; setup ADC (Vref=Vcc, /8 prescaler (125kHz))
+             ; PB2 (ADC1), ADLAR=0
+             
+C:00000e e001          ldi     r16,1     ; Vref=Vcc, ADLAR=0, MUX1=1 (ADC1 PB2)
+C:00000f b907          out     ADMUX,r16
+             
+C:000010 e803          ldi     r16,(1<<ADEN)+3 ; enable ADC, /8
+C:000011 b906          out     ADCSRA,r16
              
              ; setup timer0
              ; compare output modes normal, WGM=CTC
-C:00000e e002          ldi     r16,0b00000010
-C:00000f bd0f          out     TCCR0A,r16
+C:000012 e002          ldi     r16,0b00000010
+C:000013 bd0f          out     TCCR0A,r16
              ; WGM=CTC, clock prescaler = 1024
-C:000010 e005          ldi     r16,0b00000101
-C:000011 bf03          out     TCCR0B,r16
+C:000014 e005          ldi     r16,0b00000101
+C:000015 bf03          out     TCCR0B,r16
              ; overflow every 250 cycles = 0.5 seconds
-C:000012 e308          ldi     r16,56
-C:000013 bf06          out     OCR0A,r16
+C:000016 ef0a          ldi     r16,250
+C:000017 bf06          out     OCR0A,r16
              ; enable Compare A interrupt
              ;ldi     r16,1<<OCIE0A
              ;out     TIMSK0,r16
              ; #### Don't enable any interrupts -
              ; poll the interrupt flag instead
          
+         
           loop:
+             ; step 1 - read ADC
+C:000018 ec01          ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
+C:000019 b906          out     ADCSRA,r16
+          wfadc:
+C:00001a b106          in      r16,ADCSRA
+C:00001b 7100          andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
+C:00001c f3e9          breq    wfadc
+             ; flash first two bits
+C:00001d b125          in      r18,ADCH
+C:00001e 0f22          lsl     r18
+C:00001f 0f22          lsl     r18
+C:000020 0f22          lsl     r18
+C:000021 0f22          lsl     r18
+C:000022 0f22          lsl     r18
+C:000023 0f22          lsl     r18
+C:000024 d00d          rcall   flash1
+C:000025 d00c          rcall   flash1
+C:000026 b124          in      r18,ADCL
+C:000027 d00a          rcall   flash1
+C:000028 d009          rcall   flash1
+C:000029 d008          rcall   flash1
+C:00002a d007          rcall   flash1
+C:00002b d006          rcall   flash1
+C:00002c d005          rcall   flash1
+C:00002d d004          rcall   flash1
+C:00002e d003          rcall   flash1
+C:00002f d015          rcall   wait_long    
+C:000030 d014          rcall   wait_long    
+C:000031 cfe6          rjmp    loop
+         
+          flash1:       ; short or long flash based on MSB of r18
+C:000032   +      set_high  B,1
+C:000032 b308      in    r16,PORTB
+C:000033 6002      ori   r16,1<<1
+C:000034 bb08      out   PORTB,r16
+C:000035 d008          rcall   wait_short
+C:000036 0f22          lsl     r18
+C:000037 f408          brcc    flash12
+C:000038 d00c          rcall   wait_long
+          flash12:
+C:000039   +      set_low   B,1
+C:000039 b308      in    r16,PORTB
+C:00003a 7f0d      andi  r16,255-(1<<1)
+C:00003b bb08      out   PORTB,r16
+C:00003c d008          rcall   wait_long
+C:00003d 9508          ret
+         
+          wait_short:
+C:00003e ef5a          ldi   r21,250     ; ~250 x 760 cycles ~ 0.2 sec
+          wait_short_1:
+C:00003f ef6f          ldi   r22,255
+          wait_short_2:
+C:000040 956a          dec   r22
+C:000041 f7f1          brne  wait_short_2
+C:000042 955a          dec   r21
+C:000043 f7d9          brne  wait_short_1
+C:000044 9508          ret
+          wait_long:
+C:000045 dff8          rcall wait_short
+C:000046 dff7          rcall wait_short
+C:000047 dff6          rcall wait_short
+C:000048 dff5          rcall wait_short
+C:000049 dff4          rcall wait_short
+C:00004a dff3          rcall wait_short
+C:00004b 9508          ret
+         
+         
+         
              ; step 1: wait for the interrupt flag to be set
-C:000014 b708          in    r16,TIFR0
-C:000015 ff02          sbrs  r16,OCF0A
-C:000016 cffd          rjmp  loop
+C:00004c b708          in    r16,TIFR0
+C:00004d ff02          sbrs  r16,OCF0A
+C:00004e cfc9          rjmp  loop
              
              ; step 2: clear interrupt flag
-C:000017 e004          ldi   r16,1<<OCF0A
-C:000018 bf08          out   TIFR0,r16
+C:00004f e004          ldi   r16,1<<OCF0A
+C:000050 bf08          out   TIFR0,r16
              
              ; step 3: invert LED
-C:000019 b308          in    r16,PORTB
-C:00001a e012          ldi   r17,0b00000010
-C:00001b 2701          eor   r16,r17
-C:00001c bb08          out   PORTB,r16
+C:000051 b308          in    r16,PORTB
+C:000052 e012          ldi   r17,0b00000010
+C:000053 2701          eor   r16,r17
+C:000054 bb08          out   PORTB,r16
              
             ; step 4: do it all again
-C:00001d cff6          rjmp  loop
+C:000055 cfc2          rjmp  loop
              
           nowhere:
-C:00001e cfff          rjmp    nowhere
+C:000056 cfff          rjmp    nowhere
          
          ;################################################################
          
@@ -592,8 +670,8 @@ C:00001e cfff          rjmp    nowhere
 
 
 Segment usage:
-   Code      :        31 words (62 bytes)
-   Data      :         1 bytes
+   Code      :        87 words (174 bytes)
+   Data      :         0 bytes
    EEPROM    :         0 bytes
 
 Assembly completed with no errors.

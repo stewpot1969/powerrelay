@@ -29,7 +29,7 @@
 .dseg
 .org  SRAM_START
 
-myval:    .byte 1
+; myval:    .byte 1
 
 .cseg
 .org          0x0000
@@ -52,6 +52,15 @@ reset:
     set_output  B,3       ; PB3 relay 1 out
     set_output  B,4       ; PB4 relay 2 out
     set_pullup  B,0       ; PB0 button pullup
+
+    ; setup ADC (Vref=Vcc, /8 prescaler (125kHz))
+    ; PB2 (ADC1), ADLAR=0
+    
+    ldi     r16,1     ; Vref=Vcc, ADLAR=0, MUX1=1 (ADC1 PB2)
+    out     ADMUX,r16
+    
+    ldi     r16,(1<<ADEN)+3 ; enable ADC, /8
+    out     ADCSRA,r16
     
     ; setup timer0
     ; compare output modes normal, WGM=CTC
@@ -61,7 +70,7 @@ reset:
     ldi     r16,0b00000101
     out     TCCR0B,r16
     ; overflow every 250 cycles = 0.5 seconds
-    ldi     r16,56
+    ldi     r16,250
     out     OCR0A,r16
     ; enable Compare A interrupt
     ;ldi     r16,1<<OCIE0A
@@ -69,7 +78,70 @@ reset:
     ; #### Don't enable any interrupts -
     ; poll the interrupt flag instead
 
+
 loop:
+    ; step 1 - read ADC
+    ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
+    out     ADCSRA,r16
+wfadc:
+    in      r16,ADCSRA
+    andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
+    breq    wfadc
+    ; flash first two bits
+    in      r18,ADCH
+    lsl     r18
+    lsl     r18
+    lsl     r18
+    lsl     r18
+    lsl     r18
+    lsl     r18
+    rcall   flash1
+    rcall   flash1
+    in      r18,ADCL
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   flash1
+    rcall   wait_long    
+    rcall   wait_long    
+    rjmp    loop
+
+flash1:       ; short or long flash based on MSB of r18
+    set_high  B,1
+    rcall   wait_short
+    lsl     r18
+    brcc    flash12
+    rcall   wait_long
+flash12:
+    set_low   B,1
+    rcall   wait_long
+    ret
+
+wait_short:
+    ldi   r21,250     ; ~250 x 760 cycles ~ 0.2 sec
+wait_short_1:
+    ldi   r22,255
+wait_short_2:
+    dec   r22
+    brne  wait_short_2
+    dec   r21
+    brne  wait_short_1
+    ret
+wait_long:
+    rcall wait_short
+    rcall wait_short
+    rcall wait_short
+    rcall wait_short
+    rcall wait_short
+    rcall wait_short
+    ret
+
+
+
     ; step 1: wait for the interrupt flag to be set
     in    r16,TIFR0
     sbrs  r16,OCF0A
