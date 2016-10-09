@@ -1,5 +1,5 @@
 
-AVRA   Ver. 1.3.0 main.asm Sun Oct  9 14:52:05 2016
+AVRA   Ver. 1.3.0 main.asm Sun Oct  9 15:45:35 2016
 
 
          
@@ -17,8 +17,8 @@ AVRA   Ver. 1.3.0 main.asm Sun Oct  9 14:52:05 2016
          ; timer countdown for state changes etc
           .def  count   = r24
           .define   COUNT_PRE_ON      5   ; seconds of engine-on volts before bootup
-          .define   COUNT_PRE_OFF     60    ; seconds from shutdown relay on to power off
-          .define   COUNT_PRE_SHUT    240     ; secs of engine-off volts before shutdown
+          .define   COUNT_PRE_OFF     5    ; seconds from shutdown relay on to power off
+          .define   COUNT_PRE_SHUT    10     ; secs of engine-off volts before shutdown
          
          ; prescaler for second counter
           .def  count2  = r25
@@ -121,207 +121,180 @@ C:000016 ef0a          ldi     r16,250
 C:000017 bf06          out     OCR0A,r16
          
              ; prepare states and stuff for the loop
-C:000018 ef8f          ldi     count,-1
-C:000019 e0a1          ldi     state,STATE_IDLE
+C:000018 ef8f          ldi     count,-1        ; timer off
+C:000019 e0a1          ldi     state,STATE_IDLE    ; state=IDLE
+C:00001a e094          ldi     count2,COUNT2_PRESCALE  ; load prescaler
          
           loop:
              ; step 1: wait for the interrupt flag to be set
-C:00001a b708          in    r16,TIFR0
-C:00001b ff02          sbrs  r16,OCF0A
-C:00001c cffd          rjmp  loop
+C:00001b b708          in    r16,TIFR0
+C:00001c ff02          sbrs  r16,OCF0A
+C:00001d cffd          rjmp  loop
              
              ; step 2: clear interrupt flag
-C:00001d e004          ldi   r16,1<<OCF0A
-C:00001e bf08          out   TIFR0,r16
+C:00001e e004          ldi   r16,1<<OCF0A
+C:00001f bf08          out   TIFR0,r16
          
              ; step 3 - read ADC
-C:00001f ec01          ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
-C:000020 b906          out     ADCSRA,r16
+C:000020 ec01          ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
+C:000021 b906          out     ADCSRA,r16
           wfadc:
-C:000021 b106          in      r16,ADCSRA
-C:000022 7100          andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
-C:000023 f3e9          breq    wfadc
+C:000022 b106          in      r16,ADCSRA
+C:000023 7100          andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
+C:000024 f3e9          breq    wfadc
          
              ; step 4 - look at the voltage
-C:000024 b104          in      r16,ADCL
-C:000025 b115          in      r17,ADCH
-C:000026 e92c          ldi     r18,low(V_HIGH)
-C:000027 e032          ldi     r19,high(V_HIGH)
-C:000028 1702          cp      r16,r18     ; subtract V_HIGH from ADC
-C:000029 0713          cpc     r17,r19
-C:00002a f010          brcs    s4_1    ; branch if ADC < V_HIGH
-C:00002b e0b3          ldi     v_state,V_STATE_HIGH
-C:00002c c008          rjmp    s5
+C:000025 b104          in      r16,ADCL
+C:000026 b115          in      r17,ADCH
+C:000027 e92c          ldi     r18,low(V_HIGH)
+C:000028 e032          ldi     r19,high(V_HIGH)
+C:000029 1702          cp      r16,r18     ; subtract V_HIGH from ADC
+C:00002a 0713          cpc     r17,r19
+C:00002b f010          brcs    s4_1    ; branch if ADC < V_HIGH
+C:00002c e0b3          ldi     v_state,V_STATE_HIGH
+C:00002d c008          rjmp    s5
           s4_1:
-C:00002d e629          ldi     r18,low(V_LOW)
-C:00002e e032          ldi     r19,high(V_LOW)
-C:00002f 1702          cp      r16,r18   ; subtract V_LOW from ADC
-C:000030 0713          cpc     r17,r19
-C:000031 f010          brcs    s4_2      ; branch if ADC < V_LOW
-C:000032 e0b2          ldi     v_state,V_STATE_OK
-C:000033 c001          rjmp    s5
+C:00002e e629          ldi     r18,low(V_LOW)
+C:00002f e032          ldi     r19,high(V_LOW)
+C:000030 1702          cp      r16,r18   ; subtract V_LOW from ADC
+C:000031 0713          cpc     r17,r19
+C:000032 f010          brcs    s4_2      ; branch if ADC < V_LOW
+C:000033 e0b2          ldi     v_state,V_STATE_OK
+C:000034 c001          rjmp    s5
           s4_2:
-C:000034 e0b1          ldi     v_state,V_STATE_SICK
-         
-             ; step 4.1 - chooch the LED based on v_state
+C:000035 e0b1          ldi     v_state,V_STATE_SICK
+             
+             ; step 5  - decrement timer prescaler and timer
           s5:
-C:000035 30b1          cpi     v_state,V_STATE_SICK
-C:000036 f421          brne    s5_1
-C:000037   +      set_low   B,1     ; LED off
-C:000037 b308      in    r16,PORTB
-C:000038 7f0d      andi  r16,255-(1<<1)
-C:000039 bb08      out   PORTB,r16
-C:00003a cfdf          rjmp    loop
-          s5_1:
-C:00003b 30b3          cpi     v_state,V_STATE_HIGH
-C:00003c f421          brne    s5_2
-C:00003d   +      set_high  B,1   ; LED on
+C:000036 3094          cpi   count2,COUNT2_PRESCALE
+C:000037 f419          brne  s5a
+C:000038   +      set_low     B,1   ; ############################
+C:000038 b308      in    r16,PORTB
+C:000039 7f0d      andi  r16,255-(1<<1)
+C:00003a bb08      out   PORTB,r16
+          s5a:
+C:00003b 959a          dec   count2
+C:00003c f6f1          brne  loop      ; no prescale zero? All done for this time
+C:00003d   +      set_high    B,1       ;  ###################
 C:00003d b308      in    r16,PORTB
 C:00003e 6002      ori   r16,1<<1
 C:00003f bb08      out   PORTB,r16
-C:000040 cfd9          rjmp    loop
-          s5_2:
-C:000041 b308          in    r16,PORTB   ; invert LED
-C:000042 e012          ldi   r17,1<<1
-C:000043 2701          eor   r16,r17
-C:000044 bb08          out   PORTB,r16
-C:000045 cfd4          rjmp  loop
-             
-             ; step 5  - decrement timer prescaler and timer
-         ;s5:
-C:000046 959a          dec   count2
-C:000047 f421          brne  s6
-C:000048 e094          ldi   count2,COUNT2_PRESCALE    ; reload prescaler
-C:000049 3f8f          cpi   count,-1      ; count=-1 means counter not being used
-C:00004a f009          breq  s6
-C:00004b 958a          dec   count
+C:000040 e094          ldi   count2,COUNT2_PRESCALE    ; reload prescaler
+C:000041 3f8f          cpi   count,-1      ; count=-1 means counter not being used
+C:000042 f009          breq  s6
+C:000043 958a          dec   count
          
              ; step 6 - split out based on state
           s6:
-C:00004c 30a1          cpi   state,STATE_IDLE
-C:00004d f429          brne  s6_2    ; branch if not idle
-C:00004e 30b3            cpi   v_state,V_STATE_HIGH
-C:00004f f419            brne  s6_2
-C:000050 e0a2              ldi   state,STATE_PRE_ON    ; state=idle, v=high
-C:000051 e085              ldi   count,COUNT_PRE_ON
-C:000052 c05a              rjmp  s7
+C:000044 30a1          cpi   state,STATE_IDLE
+C:000045 f429          brne  s6_2    ; branch if not idle
+C:000046 30b3            cpi   v_state,V_STATE_HIGH
+C:000047 f419            brne  s6_2
+C:000048 e0a2              ldi   state,STATE_PRE_ON    ; state=idle, v=high
+C:000049 e085              ldi   count,COUNT_PRE_ON
+C:00004a c04b              rjmp  s7
           s6_2:
-C:000053 30a2          cpi   state,STATE_PRE_ON
-C:000054 f4b1          brne  s6_3    ; branch if not pre_on
-C:000055 30b1            cpi   v_state,V_STATE_SICK
-C:000056 f419            brne  s6_2a
-C:000057 e0a1              ldi   state,STATE_IDLE
-C:000058 ef8f              ldi   count,-1
-C:000059 c053              rjmp  s7
+C:00004b 30a2          cpi   state,STATE_PRE_ON
+C:00004c f499          brne  s6_3    ; branch if not pre_on
+C:00004d 30b1            cpi   v_state,V_STATE_SICK
+C:00004e f419            brne  s6_2a
+C:00004f e0a1              ldi   state,STATE_IDLE
+C:000050 ef8f              ldi   count,-1
+C:000051 c044              rjmp  s7
           s6_2a:
-C:00005a 30b2            cpi   v_state,V_STATE_OK
-C:00005b f419            brne  s6_2b
-C:00005c e0a1              ldi   state,STATE_IDLE
-C:00005d ef8f              ldi   count,-1
-C:00005e c04e              rjmp  s7
+C:000052 30b2            cpi   v_state,V_STATE_OK
+C:000053 f419            brne  s6_2b
+C:000054 e0a1              ldi   state,STATE_IDLE
+C:000055 ef8f              ldi   count,-1
+C:000056 c03f              rjmp  s7
           s6_2b:
-C:00005f 2388            tst   count
-C:000060 f009            breq  s6_2c
-C:000061 c04b              rjmp  s7
+C:000057 2388            tst   count
+C:000058 f009            breq  s6_2c
+C:000059 c03c              rjmp  s7
           s6_2c:
-C:000062 e0a3              ldi   state,STATE_ON    ; state=ON
-C:000063 ef8f              ldi   count,-1    ; timer off
-C:000064   +          set_high  B,4     ; power relay on
-C:000064 b308      in    r16,PORTB
-C:000065 6100      ori   r16,1<<4
-C:000066 bb08      out   PORTB,r16
-C:000067   +          set_high  B,1     ; LED on
-C:000067 b308      in    r16,PORTB
-C:000068 6002      ori   r16,1<<1
-C:000069 bb08      out   PORTB,r16
-C:00006a c042              rjmp  s7
+C:00005a e0a3              ldi   state,STATE_ON    ; state=ON
+C:00005b ef8f              ldi   count,-1    ; timer off
+C:00005c   +          set_high  B,4     ; power relay on
+C:00005c b308      in    r16,PORTB
+C:00005d 6100      ori   r16,1<<4
+C:00005e bb08      out   PORTB,r16
+         ;        set_high  B,1     ; LED on
+C:00005f c036              rjmp  s7
           s6_3:
-C:00006b 30a3          cpi   state,STATE_ON
-C:00006c f471          brne  s6_4
-C:00006d 30b1            cpi   v_state,V_STATE_SICK
-C:00006e f441            brne  s6_3a
-C:00006f   +          set_low B,4   ; power relay off
-C:00006f b308      in    r16,PORTB
-C:000070 7e0f      andi  r16,255-(1<<4)
-C:000071 bb08      out   PORTB,r16
-C:000072   +          set_low B,1   ; LED off
-C:000072 b308      in    r16,PORTB
-C:000073 7f0d      andi  r16,255-(1<<1)
-C:000074 bb08      out   PORTB,r16
-C:000075 e0a1              ldi   state,STATE_IDLE
-C:000076 c036              rjmp  s7
+C:000060 30a3          cpi   state,STATE_ON
+C:000061 f459          brne  s6_4
+C:000062 30b1            cpi   v_state,V_STATE_SICK
+C:000063 f429            brne  s6_3a
+C:000064   +          set_low B,4   ; power relay off
+C:000064 b308      in    r16,PORTB
+C:000065 7e0f      andi  r16,255-(1<<4)
+C:000066 bb08      out   PORTB,r16
+         ;        set_low B,1   ; LED off
+C:000067 e0a1              ldi   state,STATE_IDLE
+C:000068 c02d              rjmp  s7
           s6_3a:
-C:000077 30b2            cpi   v_state,V_STATE_OK
-C:000078 f411            brne  s6_4
-C:000079 e0a4              ldi   state,STATE_PRE_SHUT
-C:00007a ef80              ldi   count,COUNT_PRE_SHUT
+C:000069 30b2            cpi   v_state,V_STATE_OK
+C:00006a f411            brne  s6_4
+C:00006b e0a4              ldi   state,STATE_PRE_SHUT
+C:00006c e08a              ldi   count,COUNT_PRE_SHUT
           s6_4:
-C:00007b 30a4          cpi   state,STATE_PRE_SHUT
-C:00007c f4b9          brne  s6_5
-C:00007d 30b1            cpi   v_state,V_STATE_SICK
-C:00007e f441            brne  s6_4a
-C:00007f e0a1              ldi   state,STATE_IDLE
-C:000080   +          set_low   B,4   ; LED and relay off
-C:000080 b308      in    r16,PORTB
-C:000081 7e0f      andi  r16,255-(1<<4)
-C:000082 bb08      out   PORTB,r16
-C:000083   +          set_low   B,1
-C:000083 b308      in    r16,PORTB
-C:000084 7f0d      andi  r16,255-(1<<1)
-C:000085 bb08      out   PORTB,r16
-C:000086 c026              rjmp    s7
+C:00006d 30a4          cpi   state,STATE_PRE_SHUT
+C:00006e f4a1          brne  s6_5
+C:00006f 30b1            cpi   v_state,V_STATE_SICK
+C:000070 f429            brne  s6_4a
+C:000071 e0a1              ldi   state,STATE_IDLE
+C:000072   +          set_low   B,4   ; LED and relay off
+C:000072 b308      in    r16,PORTB
+C:000073 7e0f      andi  r16,255-(1<<4)
+C:000074 bb08      out   PORTB,r16
+         ;        set_low   B,1
+C:000075 c020              rjmp    s7
           s6_4a:
-C:000087 30b3            cpi   v_state,V_STATE_HIGH
-C:000088 f419            brne  s6_4b
-C:000089 e0a3              ldi   state,STATE_ON
-C:00008a ef8f              ldi   count,-1
-C:00008b c021              rjmp    s7
+C:000076 30b3            cpi   v_state,V_STATE_HIGH
+C:000077 f419            brne  s6_4b
+C:000078 e0a3              ldi   state,STATE_ON
+C:000079 ef8f              ldi   count,-1
+C:00007a c01b              rjmp    s7
           s6_4b:
-C:00008c 2388            tst   count
-C:00008d f4f9            brne    s7
-C:00008e e0a5              ldi   state,STATE_PRE_OFF
-C:00008f   +          set_high  B,3     ; shutdown relay on
-C:00008f b308      in    r16,PORTB
-C:000090 6008      ori   r16,1<<3
-C:000091 bb08      out   PORTB,r16
-C:000092 e38c              ldi   count,COUNT_PRE_OFF
-C:000093 c019              rjmp  s7
+C:00007b 2388            tst   count
+C:00007c f4c9            brne    s7
+C:00007d e0a5              ldi   state,STATE_PRE_OFF
+C:00007e   +          set_high  B,3     ; shutdown relay on
+C:00007e b308      in    r16,PORTB
+C:00007f 6008      ori   r16,1<<3
+C:000080 bb08      out   PORTB,r16
+C:000081 e085              ldi   count,COUNT_PRE_OFF
+C:000082 c013              rjmp  s7
           s6_5:
-C:000094 30a5          cpi   state,STATE_PRE_OFF
-C:000095 f4b9          brne  s7      ; should never branch
-C:000096 30b1            cpi   v_state,V_STATE_SICK
-C:000097 f441            brne  s6_5a
-C:000098 e0a1              ldi   state,STATE_IDLE
-C:000099   +          set_low   B,4     ; power relay off
-C:000099 b308      in    r16,PORTB
-C:00009a 7e0f      andi  r16,255-(1<<4)
-C:00009b bb08      out   PORTB,r16
-C:00009c   +          set_low   B,1     ; LED off
-C:00009c b308      in    r16,PORTB
-C:00009d 7f0d      andi  r16,255-(1<<1)
-C:00009e bb08      out   PORTB,r16
-C:00009f c00d              rjmp    s7
+C:000083 30a5          cpi   state,STATE_PRE_OFF
+C:000084 f489          brne  s7      ; should never branch
+C:000085 30b1            cpi   v_state,V_STATE_SICK
+C:000086 f429            brne  s6_5a
+C:000087 e0a1              ldi   state,STATE_IDLE
+C:000088   +          set_low   B,4     ; power relay off
+C:000088 b308      in    r16,PORTB
+C:000089 7e0f      andi  r16,255-(1<<4)
+C:00008a bb08      out   PORTB,r16
+         ;        set_low   B,1     ; LED off
+C:00008b c00a              rjmp    s7
           s6_5a:
-C:0000a0 2388            tst   count
-C:0000a1 f459            brne  s7
-C:0000a2 e0a1              ldi   state,STATE_IDLE
-C:0000a3   +          set_low   B,3   ; shutdown relay off
-C:0000a3 b308      in    r16,PORTB
-C:0000a4 7f07      andi  r16,255-(1<<3)
-C:0000a5 bb08      out   PORTB,r16
-C:0000a6   +          set_low   B,1   ; LED off
-C:0000a6 b308      in    r16,PORTB
-C:0000a7 7f0d      andi  r16,255-(1<<1)
-C:0000a8 bb08      out   PORTB,r16
-C:0000a9   +          set_low   B,4   ; power relay off
-C:0000a9 b308      in    r16,PORTB
-C:0000aa 7e0f      andi  r16,255-(1<<4)
-C:0000ab bb08      out   PORTB,r16
-C:0000ac ef8f              ldi   count,-1
+C:00008c 2388            tst   count
+C:00008d f441            brne  s7
+C:00008e e0a1              ldi   state,STATE_IDLE
+C:00008f   +          set_low   B,3   ; shutdown relay off
+C:00008f b308      in    r16,PORTB
+C:000090 7f07      andi  r16,255-(1<<3)
+C:000091 bb08      out   PORTB,r16
+         ;        set_low   B,1   ; LED off
+C:000092   +          set_low   B,4   ; power relay off
+C:000092 b308      in    r16,PORTB
+C:000093 7e0f      andi  r16,255-(1<<4)
+C:000094 bb08      out   PORTB,r16
+C:000095 ef8f              ldi   count,-1
          
             ; step 7: do it all again
           s7:
-C:0000ad cf6c          rjmp  loop
+C:000096 cf84          rjmp  loop
              
          
          ;################################################################
@@ -329,7 +302,7 @@ C:0000ad cf6c          rjmp  loop
 
 
 Segment usage:
-   Code      :       174 words (348 bytes)
+   Code      :       151 words (302 bytes)
    Data      :         0 bytes
    EEPROM    :         0 bytes
 

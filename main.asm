@@ -15,8 +15,8 @@
 ; timer countdown for state changes etc
 .def  count   = r24
 .define   COUNT_PRE_ON      5   ; seconds of engine-on volts before bootup
-.define   COUNT_PRE_OFF     60    ; seconds from shutdown relay on to power off
-.define   COUNT_PRE_SHUT    240     ; secs of engine-off volts before shutdown
+.define   COUNT_PRE_OFF     5    ; seconds from shutdown relay on to power off
+.define   COUNT_PRE_SHUT    10     ; secs of engine-off volts before shutdown
 
 ; prescaler for second counter
 .def  count2  = r25
@@ -107,8 +107,9 @@ reset:
     out     OCR0A,r16
 
     ; prepare states and stuff for the loop
-    ldi     count,-1
-    ldi     state,STATE_IDLE
+    ldi     count,-1        ; timer off
+    ldi     state,STATE_IDLE    ; state=IDLE
+    ldi     count2,COUNT2_PRESCALE  ; load prescaler
 
 loop:
     ; step 1: wait for the interrupt flag to be set
@@ -148,29 +149,16 @@ s4_1:
     rjmp    s5
 s4_2:
     ldi     v_state,V_STATE_SICK
-
-    ; step 4.1 - chooch the LED based on v_state
-s5:
-    cpi     v_state,V_STATE_SICK
-    brne    s5_1
-    set_low   B,1     ; LED off
-    rjmp    loop
-s5_1:
-    cpi     v_state,V_STATE_HIGH
-    brne    s5_2
-    set_high  B,1   ; LED on
-    rjmp    loop
-s5_2:
-    in    r16,PORTB   ; invert LED
-    ldi   r17,1<<1
-    eor   r16,r17
-    out   PORTB,r16
-    rjmp  loop
     
     ; step 5  - decrement timer prescaler and timer
-;s5:
+s5:
+    cpi   count2,COUNT2_PRESCALE
+    brne  s5a
+    set_low     B,1   ; ############################
+s5a:
     dec   count2
-    brne  s6
+    brne  loop      ; no prescale zero? All done for this time
+    set_high    B,1       ;  ###################
     ldi   count2,COUNT2_PRESCALE    ; reload prescaler
     cpi   count,-1      ; count=-1 means counter not being used
     breq  s6
@@ -207,7 +195,7 @@ s6_2c:
         ldi   state,STATE_ON    ; state=ON
         ldi   count,-1    ; timer off
         set_high  B,4     ; power relay on
-        set_high  B,1     ; LED on
+;        set_high  B,1     ; LED on
         rjmp  s7
 s6_3:
     cpi   state,STATE_ON
@@ -215,7 +203,7 @@ s6_3:
       cpi   v_state,V_STATE_SICK
       brne  s6_3a
         set_low B,4   ; power relay off
-        set_low B,1   ; LED off
+;        set_low B,1   ; LED off
         ldi   state,STATE_IDLE
         rjmp  s7
 s6_3a:
@@ -230,7 +218,7 @@ s6_4:
       brne  s6_4a
         ldi   state,STATE_IDLE
         set_low   B,4   ; LED and relay off
-        set_low   B,1
+;        set_low   B,1
         rjmp    s7
 s6_4a:
       cpi   v_state,V_STATE_HIGH
@@ -252,14 +240,14 @@ s6_5:
       brne  s6_5a
         ldi   state,STATE_IDLE
         set_low   B,4     ; power relay off
-        set_low   B,1     ; LED off
+;        set_low   B,1     ; LED off
         rjmp    s7
 s6_5a:
       tst   count
       brne  s7
         ldi   state,STATE_IDLE
         set_low   B,3   ; shutdown relay off
-        set_low   B,1   ; LED off
+;        set_low   B,1   ; LED off
         set_low   B,4   ; power relay off
         ldi   count,-1
 
