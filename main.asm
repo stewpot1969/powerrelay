@@ -26,10 +26,10 @@
 .def  state   = r26
 .define   STATE_IDLE        1   ; resting state
 .define   STATE_PRE_ON      2   ; engine started
-.define   STATE_ON          3   ; power on to Pi
-.define   STATE_PRE_SHUT    4   ; engine turned off, Pi still running
-.define   STATE_PRE_OFF     5   ; shutdown relay on, Pi shutting down
-.define   STATE_MANUAL      6   ; button has been pressed
+.define   STATE_ON          4   ; power on to Pi
+.define   STATE_PRE_SHUT    8   ; engine turned off, Pi still running
+.define   STATE_PRE_OFF     16  ; shutdown relay on, Pi shutting down
+.define   STATE_MANUAL      32  ; button has been pressed
 
 ; state of the voltage input
 .def  v_state = r27
@@ -152,109 +152,136 @@ s4_2:
     
     ; step 5  - decrement timer prescaler and timer
 s5:
-    cpi   count2,COUNT2_PRESCALE
-    brne  s5a
-    set_low     B,1   ; ############################
-s5a:
     dec   count2
     brne  loop      ; no prescale zero? All done for this time
-    set_high    B,1       ;  ###################
     ldi   count2,COUNT2_PRESCALE    ; reload prescaler
     cpi   count,-1      ; count=-1 means counter not being used
     breq  s6
     dec   count
 
+
     ; step 6 - split out based on state
 s6:
-    cpi   state,STATE_IDLE
-    brne  s6_2    ; branch if not idle
-      cpi   v_state,V_STATE_HIGH
-      brne  s6_2
-        ldi   state,STATE_PRE_ON    ; state=idle, v=high
-        ldi   count,COUNT_PRE_ON
-        rjmp  s7
-s6_2:
-    cpi   state,STATE_PRE_ON
-    brne  s6_3    ; branch if not pre_on
-      cpi   v_state,V_STATE_SICK
-      brne  s6_2a
-        ldi   state,STATE_IDLE
-        ldi   count,-1
-        rjmp  s7
-s6_2a:
-      cpi   v_state,V_STATE_OK
-      brne  s6_2b
-        ldi   state,STATE_IDLE
-        ldi   count,-1
-        rjmp  s7
-s6_2b:
-      tst   count
-      breq  s6_2c
-        rjmp  s7
-s6_2c:
-        ldi   state,STATE_ON    ; state=ON
-        ldi   count,-1    ; timer off
-        set_high  B,4     ; power relay on
-;        set_high  B,1     ; LED on
-        rjmp  s7
-s6_3:
-    cpi   state,STATE_ON
-    brne  s6_4
-      cpi   v_state,V_STATE_SICK
-      brne  s6_3a
-        set_low B,4   ; power relay off
-;        set_low B,1   ; LED off
-        ldi   state,STATE_IDLE
-        rjmp  s7
-s6_3a:
-      cpi   v_state,V_STATE_OK
-      brne  s6_4
-        ldi   state,STATE_PRE_SHUT
-        ldi   count,COUNT_PRE_SHUT
-s6_4:
-    cpi   state,STATE_PRE_SHUT
-    brne  s6_5
-      cpi   v_state,V_STATE_SICK
-      brne  s6_4a
-        ldi   state,STATE_IDLE
-        set_low   B,4   ; LED and relay off
-;        set_low   B,1
-        rjmp    s7
-s6_4a:
-      cpi   v_state,V_STATE_HIGH
-      brne  s6_4b
-        ldi   state,STATE_ON
-        ldi   count,-1
-        rjmp    s7
-s6_4b:
-      tst   count
-      brne    s7
-        ldi   state,STATE_PRE_OFF
-        set_high  B,3     ; shutdown relay on
-        ldi   count,COUNT_PRE_OFF
-        rjmp  s7
-s6_5:
-    cpi   state,STATE_PRE_OFF
-    brne  s7      ; should never branch
-      cpi   v_state,V_STATE_SICK
-      brne  s6_5a
-        ldi   state,STATE_IDLE
-        set_low   B,4     ; power relay off
-;        set_low   B,1     ; LED off
-        rjmp    s7
-s6_5a:
-      tst   count
-      brne  s7
-        ldi   state,STATE_IDLE
-        set_low   B,3   ; shutdown relay off
-;        set_low   B,1   ; LED off
-        set_low   B,4   ; power relay off
-        ldi   count,-1
-
-   ; step 7: do it all again
-s7:
-    rjmp  loop
+    ldi   ZL,low(calltable*2)
+    ldi   ZH,high(calltable*2)
+    lpm   r16,Z+
+    tst   r16
+    breq  loop      ; table ends in zero
+    lpm   r17,Z+
+    lpm   YL,Z+
+    lpm   YH,Z+
     
 
+idleoff:    ; go into idle mode
+  ldi   state,STATE_IDLE
+  ldi   count,-1
+  in    r16,PORTB
+  andi  r16,0b11100101  ; 1,3,4 off = power,shutdown,LED
+  out   PORTB,r16
+  ret  
+  
+preshut:    ; sets state=PRE_SHUT
+  ldi   state,STATE_PRE_SHUT
+  ldi   count,COUNT_PRE_SHUT
+  ret
+  
+preoff:   ;state=PRE_SHUT,Vok
+  tst   count     ; timer before setting shutdown relay
+  brne  preoff_2
+  ldi   state,STATE_PRE_OFF
+  ldi   count,COUNT_PRE_OFF
+  set_high  B,3   ; shutdown relay on
+preoff_2:
+  ret
+
+timer_idle:     ; state=PRE_OFF,Vok
+  tst   count     ; wait for timer to run out before going idle
+  brne  timer_idle_2
+  rcall idleoff
+timer_idle_2:
+  ret
+
+preon:      ; state=IDLE, Vhigh
+  ldi   state,STATE_PRE_ON
+  ldi   count,COUNT_PRE_ON
+  ret
+  
+pi_on:    ; turn the Pi on
+  tst   count   ; do nothing until timer runs out
+  brne  pi_on_2
+  ldi   state,STATE_ON
+  ldi   count,-1
+  set_high  B,1   ; LED on
+  set_high  B,4   ; Pi power on
+pi_on_2:
+  ret
+
+cancel_shut:    ; goes from state preshut to state on i.e. engine restarts
+  ldi   state,STATE_ON
+  ldi   count,-1
+  ret
+
+
+calltable:
+  .db   V_STATE_SICK,STATE_PRE_ON|STATE_ON|STATE_PRE_SHUT|STATE_PRE_OFF
+    .dw idleoff
+  .db   V_STATE_OK,STATE_PRE_ON
+    .dw idleoff
+  .db   V_STATE_OK,STATE_ON
+    .dw preshut
+  .db   V_STATE_OK,STATE_PRE_SHUT
+    .dw preoff    
+  .db   V_STATE_OK,STATE_PRE_OFF
+    .dw timer_idle    
+  .db   V_STATE_HIGH,STATE_IDLE
+    .dw preon
+  .db   V_STATE_HIGH,STATE_PRE_ON
+    .dw pi_on
+  .db   V_STATE_HIGH,STATE_PRE_SHUT
+    .dw cancel_shut
+  .db   0,1
+  .db   "1234"
 ;################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
