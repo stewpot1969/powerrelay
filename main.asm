@@ -14,9 +14,9 @@
 .def  scratch = r23
 ; timer countdown for state changes etc
 .def  count   = r24
-.define   COUNT_PRE_ON      5   ; seconds of engine-on volts before bootup
-.define   COUNT_PRE_OFF     5    ; seconds from shutdown relay on to power off
-.define   COUNT_PRE_SHUT    10     ; secs of engine-off volts before shutdown
+.define   COUNT_PRE_ON      10   ; seconds of engine-on volts before bootup
+.define   COUNT_PRE_OFF     20    ; seconds from shutdown relay on to power off
+.define   COUNT_PRE_SHUT    180     ; secs of engine-off volts before shutdown
 
 ; prescaler for second counter
 .def  count2  = r25
@@ -35,7 +35,8 @@
 .def  v_state = r27
 .define   V_STATE_SICK      1     ; <12.2V - battery getting down
 .define   V_STATE_OK        2     ; 12.2-13.2V  - engine off, battery OK
-.define   V_STATE_HIGH      3     ; >13.2V - engine running
+.define   V_STATE_HIGH      4     ; >13.2V - engine running
+.define   V_STATE_BUTTON    8     ; button pushed
 
 
 .macro    set_output
@@ -81,9 +82,11 @@ reset:
     ; 6: PB1 - indicator LED
     ; 7: PB2 - ADC1 - sys V in
     ; 8: 5V
-    set_output  B,1       ; PB1 LED out
-    set_output  B,3       ; PB3 relay 1 out
-    set_output  B,4       ; PB4 relay 2 out
+    ldi   r16,(1<<1)|(1<<3)|(1<<4)
+    out   DDRB,r16
+    ;set_output  B,1       ; PB1 LED out
+    ;set_output  B,3       ; PB3 relay 1 out
+    ;set_output  B,4       ; PB4 relay 2 out
     set_pullup  B,0       ; PB0 button pullup
 
     ; setup ADC (Vref=Vcc, /8 prescaler (125kHz))
@@ -112,6 +115,7 @@ reset:
     ldi     count2,COUNT2_PRESCALE  ; load prescaler
 
 loop:
+    
     ; step 1: wait for the interrupt flag to be set
     in    r16,TIFR0
     sbrs  r16,OCF0A
@@ -150,8 +154,13 @@ s4_1:
 s4_2:
     ldi     v_state,V_STATE_SICK
     
-    ; step 5  - decrement timer prescaler and timer
+    ; step 5  - check button, decrement timer prescaler and timer
 s5:
+    in    r16,PINB
+    andi  r16,1     ; check bit 0
+    brne  s5_1      ; PINB.0=1 = no button
+    ori   v_state,V_STATE_BUTTON
+s5_1:
     dec   count2
     brne  loop      ; no prescale zero? All done for this time
     ldi   count2,COUNT2_PRESCALE    ; reload prescaler
@@ -164,13 +173,24 @@ s5:
 s6:
     ldi   ZL,low(calltable*2)
     ldi   ZH,high(calltable*2)
-    lpm   r16,Z+
+s6_1:
+    lpm   r16,Z+    ; r16=V_STATE mask
     tst   r16
     breq  loop      ; table ends in zero
-    lpm   r17,Z+
-    lpm   YL,Z+
+    lpm   r17,Z+    ; r17=STATE mask
+    lpm   YL,Z+     ; save subroutine address in Y
     lpm   YH,Z+
-    
+    and   r16,v_state   ; and v_state with v_state mask
+    breq  s6_1      ; no overlap? go to next entry in calltable
+    and   r17,state     ; now check state mask
+    breq  s6_1        ; no overlap? next entry
+    mov   ZH,YH       ; move Y to Z
+    mov   ZL,YL
+    icall           ; call subroutine pointed to by Z
+    rjmp  loop    
+
+;========================================================
+; SUBROUTINES POINTED TO BY CALLTABLE:
 
 idleoff:    ; go into idle mode
   ldi   state,STATE_IDLE
@@ -221,8 +241,26 @@ cancel_shut:    ; goes from state preshut to state on i.e. engine restarts
   ldi   count,-1
   ret
 
+manual_on:
+  set_high  B,1   ; LED ON
+  set_high  B,4   ; Pi power on
+  ldi   state,STATE_MANUAL
+  ldi   count,5
+  ret
+
+manual_off:
+  cpi   count,-1
+  brne  eomanualoff
+  ldi   count,0
+  rcall preoff
+eomanualoff:
+  ret
 
 calltable:
+  .db   V_STATE_BUTTON,STATE_IDLE
+    .dw manual_on
+  .db   V_STATE_BUTTON,STATE_MANUAL
+    .dw manual_off
   .db   V_STATE_SICK,STATE_PRE_ON|STATE_ON|STATE_PRE_SHUT|STATE_PRE_OFF
     .dw idleoff
   .db   V_STATE_OK,STATE_PRE_ON
@@ -239,49 +277,6 @@ calltable:
     .dw pi_on
   .db   V_STATE_HIGH,STATE_PRE_SHUT
     .dw cancel_shut
-  .db   0,1
-  .db   "1234"
+  .db   0,0
 ;################################################################
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -1,5 +1,5 @@
 
-AVRA   Ver. 1.3.0 main.asm Sun Oct  9 22:29:31 2016
+AVRA   Ver. 1.3.0 main.asm Sat Oct 22 15:13:28 2016
 
 
          
@@ -16,9 +16,9 @@ AVRA   Ver. 1.3.0 main.asm Sun Oct  9 22:29:31 2016
           .def  scratch = r23
          ; timer countdown for state changes etc
           .def  count   = r24
-          .define   COUNT_PRE_ON      5   ; seconds of engine-on volts before bootup
-          .define   COUNT_PRE_OFF     5    ; seconds from shutdown relay on to power off
-          .define   COUNT_PRE_SHUT    10     ; secs of engine-off volts before shutdown
+          .define   COUNT_PRE_ON      10   ; seconds of engine-on volts before bootup
+          .define   COUNT_PRE_OFF     20    ; seconds from shutdown relay on to power off
+          .define   COUNT_PRE_SHUT    180     ; secs of engine-off volts before shutdown
          
          ; prescaler for second counter
           .def  count2  = r25
@@ -37,7 +37,8 @@ AVRA   Ver. 1.3.0 main.asm Sun Oct  9 22:29:31 2016
           .def  v_state = r27
           .define   V_STATE_SICK      1     ; <12.2V - battery getting down
           .define   V_STATE_OK        2     ; 12.2-13.2V  - engine off, battery OK
-          .define   V_STATE_HIGH      3     ; >13.2V - engine running
+          .define   V_STATE_HIGH      4     ; >13.2V - engine running
+          .define   V_STATE_BUTTON    8     ; button pushed
          
          
           .macro    set_output
@@ -83,253 +84,247 @@ C:000001 bf0d          out     SPL,r16
              ; 6: PB1 - indicator LED
              ; 7: PB2 - ADC1 - sys V in
              ; 8: 5V
-C:000002   +      set_output  B,1       ; PB1 LED out
-C:000002 b307      in    r16,DDRB
-C:000003 6002      ori   r16,1<<1
-C:000004 bb07      out   DDRB,r16
-C:000005   +      set_output  B,3       ; PB3 relay 1 out
-C:000005 b307      in    r16,DDRB
-C:000006 6008      ori   r16,1<<3
-C:000007 bb07      out   DDRB,r16
-C:000008   +      set_output  B,4       ; PB4 relay 2 out
-C:000008 b307      in    r16,DDRB
-C:000009 6100      ori   r16,1<<4
-C:00000a bb07      out   DDRB,r16
-C:00000b   +      set_pullup  B,0       ; PB0 button pullup
-C:00000b b308      in    r16,PORTB
-C:00000c 6001      ori   r16,1<<0
-C:00000d bb08      out   PORTB,r16
+C:000002 e10a          ldi   r16,(1<<1)|(1<<3)|(1<<4)
+C:000003 bb07          out   DDRB,r16
+             ;set_output  B,1       ; PB1 LED out
+             ;set_output  B,3       ; PB3 relay 1 out
+             ;set_output  B,4       ; PB4 relay 2 out
+C:000004   +      set_pullup  B,0       ; PB0 button pullup
+C:000004 b308      in    r16,PORTB
+C:000005 6001      ori   r16,1<<0
+C:000006 bb08      out   PORTB,r16
          
              ; setup ADC (Vref=Vcc, /8 prescaler (125kHz))
              ; PB2 (ADC1), ADLAR=0
              
-C:00000e e001          ldi     r16,1     ; Vref=Vcc, ADLAR=0, MUX1=1 (ADC1 PB2)
-C:00000f b907          out     ADMUX,r16
+C:000007 e001          ldi     r16,1     ; Vref=Vcc, ADLAR=0, MUX1=1 (ADC1 PB2)
+C:000008 b907          out     ADMUX,r16
              
-C:000010 e803          ldi     r16,(1<<ADEN)+3 ; enable ADC, /8
-C:000011 b906          out     ADCSRA,r16
+C:000009 e803          ldi     r16,(1<<ADEN)+3 ; enable ADC, /8
+C:00000a b906          out     ADCSRA,r16
              
              ; setup timer0
              ; compare output modes normal, WGM=CTC
-C:000012 e002          ldi     r16,0b00000010
-C:000013 bd0f          out     TCCR0A,r16
+C:00000b e002          ldi     r16,0b00000010
+C:00000c bd0f          out     TCCR0A,r16
              ; WGM=CTC, clock prescaler = 1024
-C:000014 e005          ldi     r16,0b00000101
-C:000015 bf03          out     TCCR0B,r16
+C:00000d e005          ldi     r16,0b00000101
+C:00000e bf03          out     TCCR0B,r16
              ; overflow every 250 cycles = 0.5 seconds
-C:000016 ef0a          ldi     r16,250
-C:000017 bf06          out     OCR0A,r16
+C:00000f ef0a          ldi     r16,250
+C:000010 bf06          out     OCR0A,r16
          
              ; prepare states and stuff for the loop
-C:000018 ef8f          ldi     count,-1        ; timer off
-C:000019 e0a1          ldi     state,STATE_IDLE    ; state=IDLE
-C:00001a e094          ldi     count2,COUNT2_PRESCALE  ; load prescaler
+C:000011 ef8f          ldi     count,-1        ; timer off
+C:000012 e0a1          ldi     state,STATE_IDLE    ; state=IDLE
+C:000013 e094          ldi     count2,COUNT2_PRESCALE  ; load prescaler
          
           loop:
+             
              ; step 1: wait for the interrupt flag to be set
-C:00001b b708          in    r16,TIFR0
-C:00001c ff02          sbrs  r16,OCF0A
-C:00001d cffd          rjmp  loop
+C:000014 b708          in    r16,TIFR0
+C:000015 ff02          sbrs  r16,OCF0A
+C:000016 cffd          rjmp  loop
              
              ; step 2: clear interrupt flag
-C:00001e e004          ldi   r16,1<<OCF0A
-C:00001f bf08          out   TIFR0,r16
+C:000017 e004          ldi   r16,1<<OCF0A
+C:000018 bf08          out   TIFR0,r16
          
              ; step 3 - read ADC
-C:000020 ec01          ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
-C:000021 b906          out     ADCSRA,r16
+C:000019 ec01          ldi     r16,(1<<ADEN)+(1<<ADSC)+1   ; start conversion
+C:00001a b906          out     ADCSRA,r16
           wfadc:
-C:000022 b106          in      r16,ADCSRA
-C:000023 7100          andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
-C:000024 f3e9          breq    wfadc
+C:00001b b106          in      r16,ADCSRA
+C:00001c 7100          andi    r16,(1<<ADIF)     ; check if ADIF is set (ADC complete)
+C:00001d f3e9          breq    wfadc
          
              ; step 4 - look at the voltage
-C:000025 b104          in      r16,ADCL
-C:000026 b115          in      r17,ADCH
-C:000027 e92c          ldi     r18,low(V_HIGH)
-C:000028 e032          ldi     r19,high(V_HIGH)
-C:000029 1702          cp      r16,r18     ; subtract V_HIGH from ADC
-C:00002a 0713          cpc     r17,r19
-C:00002b f010          brcs    s4_1    ; branch if ADC < V_HIGH
-C:00002c e0b3          ldi     v_state,V_STATE_HIGH
-C:00002d c008          rjmp    s5
+C:00001e b104          in      r16,ADCL
+C:00001f b115          in      r17,ADCH
+C:000020 e92c          ldi     r18,low(V_HIGH)
+C:000021 e032          ldi     r19,high(V_HIGH)
+C:000022 1702          cp      r16,r18     ; subtract V_HIGH from ADC
+C:000023 0713          cpc     r17,r19
+C:000024 f010          brcs    s4_1    ; branch if ADC < V_HIGH
+C:000025 e0b4          ldi     v_state,V_STATE_HIGH
+C:000026 c008          rjmp    s5
           s4_1:
-C:00002e e629          ldi     r18,low(V_LOW)
-C:00002f e032          ldi     r19,high(V_LOW)
-C:000030 1702          cp      r16,r18   ; subtract V_LOW from ADC
-C:000031 0713          cpc     r17,r19
-C:000032 f010          brcs    s4_2      ; branch if ADC < V_LOW
-C:000033 e0b2          ldi     v_state,V_STATE_OK
-C:000034 c001          rjmp    s5
+C:000027 e629          ldi     r18,low(V_LOW)
+C:000028 e032          ldi     r19,high(V_LOW)
+C:000029 1702          cp      r16,r18   ; subtract V_LOW from ADC
+C:00002a 0713          cpc     r17,r19
+C:00002b f010          brcs    s4_2      ; branch if ADC < V_LOW
+C:00002c e0b2          ldi     v_state,V_STATE_OK
+C:00002d c001          rjmp    s5
           s4_2:
-C:000035 e0b1          ldi     v_state,V_STATE_SICK
+C:00002e e0b1          ldi     v_state,V_STATE_SICK
              
-             ; step 5  - decrement timer prescaler and timer
+             ; step 5  - check button, decrement timer prescaler and timer
           s5:
-C:000036 959a          dec   count2
-C:000037 f719          brne  loop      ; no prescale zero? All done for this time
-C:000038 e094          ldi   count2,COUNT2_PRESCALE    ; reload prescaler
-C:000039 3f8f          cpi   count,-1      ; count=-1 means counter not being used
-C:00003a f009          breq  s6
-C:00003b 958a          dec   count
+C:00002f b306          in    r16,PINB
+C:000030 7001          andi  r16,1     ; check bit 0
+C:000031 f409          brne  s5_1      ; PINB.0=1 = no button
+C:000032 60b8          ori   v_state,V_STATE_BUTTON
+          s5_1:
+C:000033 959a          dec   count2
+C:000034 f6f9          brne  loop      ; no prescale zero? All done for this time
+C:000035 e094          ldi   count2,COUNT2_PRESCALE    ; reload prescaler
+C:000036 3f8f          cpi   count,-1      ; count=-1 means counter not being used
+C:000037 f009          breq  s6
+C:000038 958a          dec   count
          
          
              ; step 6 - split out based on state
           s6:
-C:00003c ede4          ldi   ZL,low(calltable*2)
-C:00003d e0f0          ldi   ZH,high(calltable*2)
-C:00003e 9105          lpm   r16,Z+
-C:00003f 2300          tst   r16
-C:000040 f2d1          breq  loop      ; table ends in zero
-C:000041 9115          lpm   r17,Z+
-C:000042 91c5          lpm   YL,Z+
-C:000043 91d5          lpm   YH,Z+
-             
+C:000039 efea          ldi   ZL,low(calltable*2)
+C:00003a e0f0          ldi   ZH,high(calltable*2)
+          s6_1:
+C:00003b 9105          lpm   r16,Z+    ; r16=V_STATE mask
+C:00003c 2300          tst   r16
+C:00003d f2b1          breq  loop      ; table ends in zero
+C:00003e 9115          lpm   r17,Z+    ; r17=STATE mask
+C:00003f 91c5          lpm   YL,Z+     ; save subroutine address in Y
+C:000040 91d5          lpm   YH,Z+
+C:000041 230b          and   r16,v_state   ; and v_state with v_state mask
+C:000042 f3c1          breq  s6_1      ; no overlap? go to next entry in calltable
+C:000043 231a          and   r17,state     ; now check state mask
+C:000044 f3b1          breq  s6_1        ; no overlap? next entry
+C:000045 2ffd          mov   ZH,YH       ; move Y to Z
+C:000046 2fec          mov   ZL,YL
+C:000047 9509          icall           ; call subroutine pointed to by Z
+C:000048 cfcb          rjmp  loop    
+         
+         ;========================================================
+         ; SUBROUTINES POINTED TO BY CALLTABLE:
          
           idleoff:    ; go into idle mode
-C:000044 e0a1        ldi   state,STATE_IDLE
-C:000045 ef8f        ldi   count,-1
-C:000046 b308        in    r16,PORTB
-C:000047 7e05        andi  r16,0b11100101  ; 1,3,4 off = power,shutdown,LED
-C:000048 bb08        out   PORTB,r16
-C:000049 9508        ret  
+C:000049 e0a1        ldi   state,STATE_IDLE
+C:00004a ef8f        ldi   count,-1
+C:00004b b308        in    r16,PORTB
+C:00004c 7e05        andi  r16,0b11100101  ; 1,3,4 off = power,shutdown,LED
+C:00004d bb08        out   PORTB,r16
+C:00004e 9508        ret  
            
           preshut:    ; sets state=PRE_SHUT
-C:00004a e0a8        ldi   state,STATE_PRE_SHUT
-C:00004b e08a        ldi   count,COUNT_PRE_SHUT
-C:00004c 9508        ret
+C:00004f e0a8        ldi   state,STATE_PRE_SHUT
+C:000050 eb84        ldi   count,COUNT_PRE_SHUT
+C:000051 9508        ret
            
           preoff:   ;state=PRE_SHUT,Vok
-C:00004d 2388        tst   count     ; timer before setting shutdown relay
-C:00004e f429        brne  preoff_2
-C:00004f e1a0        ldi   state,STATE_PRE_OFF
-C:000050 e085        ldi   count,COUNT_PRE_OFF
-C:000051   +    set_high  B,3   ; shutdown relay on
-C:000051 b308      in    r16,PORTB
-C:000052 6008      ori   r16,1<<3
-C:000053 bb08      out   PORTB,r16
+C:000052 2388        tst   count     ; timer before setting shutdown relay
+C:000053 f429        brne  preoff_2
+C:000054 e1a0        ldi   state,STATE_PRE_OFF
+C:000055 e184        ldi   count,COUNT_PRE_OFF
+C:000056   +    set_high  B,3   ; shutdown relay on
+C:000056 b308      in    r16,PORTB
+C:000057 6008      ori   r16,1<<3
+C:000058 bb08      out   PORTB,r16
           preoff_2:
-C:000054 9508        ret
+C:000059 9508        ret
          
           timer_idle:     ; state=PRE_OFF,Vok
-C:000055 2388        tst   count     ; wait for timer to run out before going idle
-C:000056 f409        brne  timer_idle_2
-C:000057 dfec        rcall idleoff
+C:00005a 2388        tst   count     ; wait for timer to run out before going idle
+C:00005b f409        brne  timer_idle_2
+C:00005c dfec        rcall idleoff
           timer_idle_2:
-C:000058 9508        ret
+C:00005d 9508        ret
          
           preon:      ; state=IDLE, Vhigh
-C:000059 e0a2        ldi   state,STATE_PRE_ON
-C:00005a e085        ldi   count,COUNT_PRE_ON
-C:00005b 9508        ret
+C:00005e e0a2        ldi   state,STATE_PRE_ON
+C:00005f e08a        ldi   count,COUNT_PRE_ON
+C:000060 9508        ret
            
           pi_on:    ; turn the Pi on
-C:00005c 2388        tst   count   ; do nothing until timer runs out
-C:00005d f441        brne  pi_on_2
-C:00005e e0a4        ldi   state,STATE_ON
-C:00005f ef8f        ldi   count,-1
-C:000060   +    set_high  B,1   ; LED on
-C:000060 b308      in    r16,PORTB
-C:000061 6002      ori   r16,1<<1
-C:000062 bb08      out   PORTB,r16
-C:000063   +    set_high  B,4   ; Pi power on
-C:000063 b308      in    r16,PORTB
-C:000064 6100      ori   r16,1<<4
-C:000065 bb08      out   PORTB,r16
+C:000061 2388        tst   count   ; do nothing until timer runs out
+C:000062 f441        brne  pi_on_2
+C:000063 e0a4        ldi   state,STATE_ON
+C:000064 ef8f        ldi   count,-1
+C:000065   +    set_high  B,1   ; LED on
+C:000065 b308      in    r16,PORTB
+C:000066 6002      ori   r16,1<<1
+C:000067 bb08      out   PORTB,r16
+C:000068   +    set_high  B,4   ; Pi power on
+C:000068 b308      in    r16,PORTB
+C:000069 6100      ori   r16,1<<4
+C:00006a bb08      out   PORTB,r16
           pi_on_2:
-C:000066 9508        ret
+C:00006b 9508        ret
          
           cancel_shut:    ; goes from state preshut to state on i.e. engine restarts
-C:000067 e0a4        ldi   state,STATE_ON
-C:000068 ef8f        ldi   count,-1
-C:000069 9508        ret
+C:00006c e0a4        ldi   state,STATE_ON
+C:00006d ef8f        ldi   count,-1
+C:00006e 9508        ret
          
+          manual_on:
+C:00006f   +    set_high  B,1   ; LED ON
+C:00006f b308      in    r16,PORTB
+C:000070 6002      ori   r16,1<<1
+C:000071 bb08      out   PORTB,r16
+C:000072   +    set_high  B,4   ; Pi power on
+C:000072 b308      in    r16,PORTB
+C:000073 6100      ori   r16,1<<4
+C:000074 bb08      out   PORTB,r16
+C:000075 e2a0        ldi   state,STATE_MANUAL
+C:000076 e085        ldi   count,5
+C:000077 9508        ret
+         
+          manual_off:
+C:000078 3f8f        cpi   count,-1
+C:000079 f411        brne  eomanualoff
+C:00007a e080        ldi   count,0
+C:00007b dfd6        rcall preoff
+          eomanualoff:
+C:00007c 9508        ret
          
           calltable:
+            .db   V_STATE_BUTTON,STATE_IDLE
+C:00007D 0801
+              .dw manual_on
+C:00007e 006f
+            .db   V_STATE_BUTTON,STATE_MANUAL
+C:00007F 0820
+              .dw manual_off
+C:000080 0078
             .db   V_STATE_SICK,STATE_PRE_ON|STATE_ON|STATE_PRE_SHUT|STATE_PRE_OFF
-C:00006A 011E
+C:000081 011E
               .dw idleoff
-C:00006b 0044
+C:000082 0049
             .db   V_STATE_OK,STATE_PRE_ON
-C:00006C 0202
+C:000083 0202
               .dw idleoff
-C:00006d 0044
+C:000084 0049
             .db   V_STATE_OK,STATE_ON
-C:00006E 0204
+C:000085 0204
               .dw preshut
-C:00006f 004a
+C:000086 004f
             .db   V_STATE_OK,STATE_PRE_SHUT
-C:000070 0208
+C:000087 0208
               .dw preoff    
-C:000071 004d
+C:000088 0052
             .db   V_STATE_OK,STATE_PRE_OFF
-C:000072 0210
+C:000089 0210
               .dw timer_idle    
-C:000073 0055
+C:00008a 005a
             .db   V_STATE_HIGH,STATE_IDLE
-C:000074 0301
+C:00008B 0401
               .dw preon
-C:000075 0059
+C:00008c 005e
             .db   V_STATE_HIGH,STATE_PRE_ON
-C:000076 0302
+C:00008D 0402
               .dw pi_on
-C:000077 005c
+C:00008e 0061
             .db   V_STATE_HIGH,STATE_PRE_SHUT
-C:000078 0308
+C:00008F 0408
               .dw cancel_shut
-C:000079 0067
-            .db   0,1
-C:00007A 0001
-            .db   "1234"
-C:00007B 31323334
+C:000090 006c
+            .db   0,0
+C:000091 0000
          ;################################################################
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
-         
          
 
 
 Segment usage:
-   Code      :       125 words (250 bytes)
+   Code      :       146 words (292 bytes)
    Data      :         0 bytes
    EEPROM    :         0 bytes
 
